@@ -31,13 +31,15 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ patients, total, page, limit })
   } catch (error) {
     console.error('GET patients error:', error)
-    return NextResponse.json({ error: 'خطأ في جلب المرضى' }, { status: 500 })
+    return NextResponse.json({ error: 'خطأ في جلب المرضى', details: String(error) }, { status: 500 })
   }
 }
 
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
+    console.log('[API] Creating patient:', JSON.stringify(body))
+
     const patient = await db.patient.create({
       data: {
         name: body.name,
@@ -54,14 +56,16 @@ export async function POST(request: NextRequest) {
       },
     })
 
+    console.log('[API] Patient created:', patient.id)
     emitSync('patient:created', { patient, userId: body.userId })
 
     return NextResponse.json({ patient }, { status: 201 })
   } catch (error: unknown) {
-    console.error('POST patient error:', error)
-    const msg = error instanceof Error && error.message.includes('Unique') 
+    console.error('[API] POST patient error:', error)
+    const errMsg = error instanceof Error ? error.message : String(error)
+    const msg = errMsg.includes('Unique') 
       ? 'رقم الملف موجود مسبقاً' 
       : 'خطأ في إنشاء مريض جديد'
-    return NextResponse.json({ error: msg }, { status: 500 })
+    return NextResponse.json({ error: msg, debug: errMsg }, { status: 500 })
   }
 }
