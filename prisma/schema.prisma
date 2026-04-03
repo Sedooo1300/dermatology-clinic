@@ -1,0 +1,120 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        String   @id @default(cuid())
+  name      String
+  role      String   @default("secretary")
+  phone     String?
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  createdPatients Patient[]  @relation("CreatedBy")
+  createdVisits   Visit[]    @relation("CreatedBy")
+  createdSessions Session[]  @relation("CreatedBy")
+  userNotes       Note[]     @relation("UserNotes")
+}
+
+model Patient {
+  id            String    @id @default(cuid())
+  name          String
+  phone         String?
+  age           Int?
+  gender        String?
+  address       String?
+  nationalId    String?
+  fileNumber    String?   @unique
+  diagnosis     String?
+  notes         String?
+  status        String    @default("active")
+  createdBy     String
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  creator       User      @relation("CreatedBy", fields: [createdBy], references: [id])
+  visits        Visit[]
+  sessions      Session[]
+  alerts        Alert[]
+  patientNotes  Note[]    @relation("PatientNotes")
+}
+
+model Service {
+  id          String    @id @default(cuid())
+  name        String
+  description String?
+  price       Float
+  duration    Int?
+  isActive    Boolean   @default(true)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  sessions    Session[]
+}
+
+model Session {
+  id          String    @id @default(cuid())
+  patientId   String
+  patient     Patient   @relation(fields: [patientId], references: [id])
+  serviceId   String
+  service     Service   @relation(fields: [serviceId], references: [id])
+  doctorId    String?
+  status      String    @default("scheduled")
+  sessionDate DateTime
+  notes       String?
+  totalPrice  Float?
+  paidAmount  Float     @default(0)
+  createdBy   String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  creator     User?     @relation("CreatedBy", fields: [createdBy], references: [id])
+}
+
+model Visit {
+  id            String    @id @default(cuid())
+  patientId     String
+  patient       Patient   @relation(fields: [patientId], references: [id])
+  doctorId      String?
+  visitDate     DateTime
+  visitType     String    @default("new")
+  diagnosis     String?
+  prescription  String?
+  examination   String?
+  fees          Float?
+  paidAmount    Float     @default(0)
+  notes         String?
+  createdBy     String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  creator       User?     @relation("CreatedBy", fields: [createdBy], references: [id])
+}
+
+model Note {
+  id          String   @id @default(cuid())
+  patientId   String?
+  patient     Patient? @relation("PatientNotes", fields: [patientId], references: [id])
+  userId      String?
+  user        User?    @relation("UserNotes", fields: [userId], references: [id])
+  section     String
+  relatedId   String?
+  content     String
+  isImportant Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime  @updatedAt
+}
+
+model Alert {
+  id          String   @id @default(cuid())
+  patientId   String
+  patient     Patient  @relation(fields: [patientId], references: [id])
+  title       String
+  message     String
+  alertDate   DateTime
+  isRead      Boolean  @default(false)
+  alertType   String   @default("reminder")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime  @updatedAt
+}
