@@ -1,6 +1,5 @@
 import { PrismaClient } from '@prisma/client'
 import { PrismaLibSQL } from '@prisma/adapter-libsql'
-import { createClient, type Client } from '@libsql/client'
 
 const globalForPrisma = globalThis as unknown as {
   prisma: PrismaClient | undefined
@@ -13,10 +12,9 @@ function createPrismaClient() {
   const isRemote = dbUrl.startsWith('libsql://') || dbUrl.startsWith('https://')
 
   if (isRemote) {
-    // Remote Turso database - use libSQL adapter
+    // Remote Turso database - PrismaLibSQL takes Config{url} not Client
     console.log('[DB] Using remote Turso database')
-    const libsqlClient: Client = createClient({ url: dbUrl })
-    const adapter = new PrismaLibSQL(libsqlClient)
+    const adapter = new PrismaLibSQL({ url: dbUrl })
     return new PrismaClient({ adapter })
   } else {
     // Local SQLite file (development)
@@ -30,10 +28,3 @@ function createPrismaClient() {
 export const db = globalForPrisma.prisma ?? createPrismaClient()
 
 if (process.env.NODE_ENV !== 'production') globalForPrisma.prisma = db
-
-// Test connection on startup
-db.$connect().then(() => {
-  console.log('[DB] ✅ Database connected successfully')
-}).catch((err) => {
-  console.error('[DB] ❌ Database connection failed:', err)
-})
