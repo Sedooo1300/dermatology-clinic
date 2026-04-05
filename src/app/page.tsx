@@ -112,6 +112,10 @@ import {
   WifiOff,
   Lock,
   Palette,
+  HardDrive,
+  Download,
+  Upload,
+  RotateCcw,
 } from 'lucide-react'
 
 // ─── Helpers ───────────────────────────────────────────────────
@@ -284,6 +288,92 @@ export default function Home() {
   const [reportsUnlocked, setReportsUnlocked] = useState(false)
   const [reportsPassword, setReportsPassword] = useState('')
   const [reportsPasswordOpen, setReportsPasswordOpen] = useState(false)
+
+  // ─── Backup State ─────────────────────────────────────────
+  const [backups, setBackups] = useState<any[]>([])
+  const [backupLoading, setBackupLoading] = useState(false)
+
+  // Fetch backups when settings tab is open
+  useEffect(() => {
+    if (activeTab === 'more' && moreSubTab === 'settings') {
+      fetch('/api/backup')
+        .then(r => r.json())
+        .then(d => { if (d.backups) setBackups(d.backups) })
+        .catch(() => {})
+    }
+  }, [activeTab, moreSubTab])
+
+  const handleCreateBackup = useCallback(async () => {
+    setBackupLoading(true)
+    try {
+      const res = await fetch('/api/backup', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ type: 'manual' }) })
+      const data = await res.json()
+      if (data.backup) {
+        toast.success(`تم إنشاء نسخة احتياطية (${data.backup.size})`)
+        // Download file
+        const blob = new Blob([JSON.stringify(data.exportData, null, 2)], { type: 'application/json' })
+        const url = URL.createObjectURL(blob)
+        const a = document.createElement('a')
+        a.href = url
+        a.download = `clinic-backup-${new Date().toISOString().slice(0,10)}.json`
+        a.click()
+        URL.revokeObjectURL(url)
+        // Refresh list
+        const list = await fetch('/api/backup').then(r => r.json())
+        if (list.backups) setBackups(list.backups)
+      } else {
+        toast.error(data.error || 'خطأ في إنشاء النسخة')
+      }
+    } catch { toast.error('خطأ في الاتصال') }
+    setBackupLoading(false)
+  }, [])
+
+  const handleImportBackup = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    if (!confirm('هل أنت متأكد؟ سيتم استبدال جميع البيانات الحالية بالنسخة المحددة.')) {
+      e.target.value = ''
+      return
+    }
+    try {
+      const text = await file.text()
+      const res = await fetch('/api/backup/restore', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ importData: text }) })
+      const data = await res.json()
+      if (data.success) {
+        toast.success(`تم الاستعادة بنجاح (${data.restored.patients} مريض، ${data.restored.visits} زيارة)`)
+        // Refresh data
+        clinic.fetchPatients()
+        clinic.fetchDashboard()
+      } else {
+        toast.error(data.error || 'خطأ في الاستعادة')
+      }
+    } catch { toast.error('خطأ في قراءة الملف') }
+    e.target.value = ''
+  }, [clinic])
+
+  const handleRestoreBackup = useCallback(async (backupId: string) => {
+    if (!confirm('هل أنت متأكد؟ سيتم حذف جميع البيانات واستبدالها بهذه النسخة.')) return
+    try {
+      const res = await fetch('/api/backup/restore', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ backupId }) })
+      const data = await res.json()
+      if (data.success) {
+        toast.success(`تم الاستعادة بنجاح (${data.restored.patients} مريض)`)
+        clinic.fetchPatients()
+        clinic.fetchDashboard()
+      } else {
+        toast.error(data.error || 'خطأ في الاستعادة')
+      }
+    } catch { toast.error('خطأ في الاتصال') }
+  }, [clinic])
+
+  const handleDeleteBackup = useCallback(async (backupId: string) => {
+    if (!confirm('هل تريد حذف هذه النسخة؟')) return
+    try {
+      await fetch(`/api/backup?id=${backupId}`, { method: 'DELETE' })
+      setBackups(prev => prev.filter((b: any) => b.id !== backupId))
+      toast.success('تم حذف النسخة')
+    } catch { toast.error('خطأ في الحذف') }
+  }, [])
 
   const currentTheme = COLOR_THEMES.find(t => t.id === selectedTheme) || COLOR_THEMES[0]
 
@@ -1034,6 +1124,12 @@ export default function Home() {
               syncConnected={clinic.connected}
               syncConnectionInfo={clinic.connectionInfo}
               syncLastTime={clinic.lastSyncTime}
+              backups={backups}
+              backupLoading={backupLoading}
+              onCreateBackup={handleCreateBackup}
+              onImportBackup={handleImportBackup}
+              onRestoreBackup={handleRestoreBackup}
+              onDeleteBackup={handleDeleteBackup}
             />
           )}
         </div>
@@ -2782,7 +2878,7 @@ function ReportsTab({ reportSubTab, onSubTabChange, dailyReport, weeklyReport, m
 // ═══════════════════════════════════════════════════════════════
 // MORE TAB
 // ═══════════════════════════════════════════════════════════════
-function MoreTab({ moreSubTab, onSubTabChange, services, servicesLoading, alerts, alertsLoading, onAddService, onEditService, onDeleteService, onAddAlert, onMarkAlertRead, onDeleteAlert, onRefreshServices, onRefreshAlerts, selectedTheme, onThemeChange, syncConnected, syncConnectionInfo, syncLastTime }: any) {
+function MoreTab({ moreSubTab, onSubTabChange, services, servicesLoading, alerts, alertsLoading, onAddService, onEditService, onDeleteService, onAddAlert, onMarkAlertRead, onDeleteAlert, onRefreshServices, onRefreshAlerts, selectedTheme, onThemeChange, syncConnected, syncConnectionInfo, syncLastTime, backups, backupLoading, onCreateBackup, onImportBackup, onRestoreBackup, onDeleteBackup }: any) {
   return (
     <div className="space-y-4">
       <Tabs value={moreSubTab} onValueChange={v => onSubTabChange(v as any)}>
@@ -2979,6 +3075,79 @@ function MoreTab({ moreSubTab, onSubTabChange, services, servicesLoading, alerts
                     </button>
                   ))}
                 </div>
+              </div>
+
+              <Separator />
+
+              {/* Backup & Restore */}
+              <div className="space-y-3">
+                <div className="flex items-center gap-2">
+                  <HardDrive className="w-5 h-5 text-muted-foreground" />
+                  <p className="text-sm font-medium">النسخ الاحتياطي</p>
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <Button
+                    variant="outline"
+                    className="h-auto py-3 flex flex-col items-center gap-1"
+                    onClick={onCreateBackup}
+                    disabled={backupLoading}
+                  >
+                    <Download className="w-5 h-5 text-blue-600" />
+                    <span className="text-xs">إنشاء نسخة</span>
+                  </Button>
+                  <label className="Button-variant-outline h-auto py-3 flex flex-col items-center gap-1 border rounded-md cursor-pointer hover:bg-muted transition-colors">
+                    <Upload className="w-5 h-5 text-amber-600" />
+                    <span className="text-xs">استيراد نسخة</span>
+                    <input
+                      type="file"
+                      accept=".json"
+                      className="hidden"
+                      onChange={onImportBackup}
+                    />
+                  </label>
+                </div>
+
+                {/* Auto backup status */}
+                <div className="flex items-center justify-between p-2 bg-muted/50 rounded-lg">
+                  <div className="flex items-center gap-2">
+                    <Clock className="w-4 h-4 text-muted-foreground" />
+                    <span className="text-xs text-muted-foreground">نسخ تلقائي كل 24 ساعة</span>
+                  </div>
+                  <span className="text-[10px] px-2 py-0.5 bg-emerald-100 text-emerald-700 rounded-full">مفعّل</span>
+                </div>
+
+                {/* Saved backups list */}
+                {backups.length > 0 && (
+                  <div className="space-y-1.5">
+                    <p className="text-xs text-muted-foreground font-medium">النسخ المحفوظة ({backups.length})</p>
+                    <div className="max-h-40 overflow-y-auto space-y-1">
+                      {backups.map((b: any) => (
+                        <div key={b.id} className="flex items-center justify-between p-2 bg-background border rounded-lg">
+                          <div className="flex-1 min-w-0">
+                            <p className="text-xs font-medium truncate">{b.name}</p>
+                            <p className="text-[10px] text-muted-foreground">{b.sizeFormatted} · {new Date(b.createdAt).toLocaleDateString('ar-EG')}</p>
+                          </div>
+                          <div className="flex gap-1">
+                            <button
+                              className="p-1.5 hover:bg-emerald-50 rounded-md transition-colors"
+                              title="استعادة"
+                              onClick={() => onRestoreBackup(b.id)}
+                            >
+                              <RotateCcw className="w-3.5 h-3.5 text-emerald-600" />
+                            </button>
+                            <button
+                              className="p-1.5 hover:bg-red-50 rounded-md transition-colors"
+                              title="حذف"
+                              onClick={() => onDeleteBackup(b.id)}
+                            >
+                              <Trash2 className="w-3.5 h-3.5 text-red-500" />
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
 
               <Separator />
